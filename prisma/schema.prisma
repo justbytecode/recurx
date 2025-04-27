@@ -1,0 +1,275 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String          @id @default(uuid())
+  name          String?
+  email         String          @unique
+  emailVerified DateTime?
+  image         String?
+  role          Role            @default(user)
+  walletAddress String?
+  accounts      Account[]
+  sessions      Session[]
+  verificationTokens VerificationToken[]
+  apiKeys       ApiKey[]
+  teamMembers   TeamMember[]    @relation("UserTeamMembers")
+  merchantTeams TeamMember[]    @relation("MerchantTeamMembers")
+  customersAsUser     Customer[]      @relation("CustomerToUser")
+  customersAsMerchant Customer[]      @relation("CustomerToMerchant")
+  transactions  Transaction[]
+  subscriptions Subscription[]
+  wallet        Wallet?
+  supportTickets SupportTicket[]
+  kyb           KYB?
+  plans         Plan[]
+  payLinks      PayLink[]
+  withdrawals   Withdrawal[]
+  integrations  Integration[]
+  invoices      Invoice[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+}
+
+model Account {
+  id                String   @id @default(uuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model VerificationToken {
+  id            String    @id @default(uuid())
+  identifier    String
+  token         String    @unique
+  expires       DateTime
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([identifier, token])
+}
+
+model ApiKey {
+  id        String   @id @default(uuid())
+  userId    String
+  name      String
+  key       String   @unique
+  createdAt DateTime @default(now())
+  revoked   Boolean  @default(false)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model TeamMember {
+  id         String   @id @default(uuid())
+  userId     String
+  merchantId String
+  role       TeamRole
+  email      String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation("UserTeamMembers", fields: [userId], references: [id], onDelete: Cascade)
+  merchant   User     @relation("MerchantTeamMembers", fields: [merchantId], references: [id], onDelete: Cascade)
+}
+
+model Customer {
+  id              String        @id @default(uuid())
+  userId          String?
+  merchantId      String
+  name            String
+  email           String?
+  walletAddress   String
+  billingDetails  Json?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  user            User?         @relation("CustomerToUser", fields: [userId], references: [id], onDelete: SetNull)
+  merchant        User          @relation("CustomerToMerchant", fields: [merchantId], references: [id], onDelete: Cascade)
+  transactions    Transaction[]
+  subscriptions   Subscription[]
+  invoices        Invoice[]
+}
+
+model Transaction {
+  id            String      @id @default(uuid())
+  userId        String?
+  customerId    String?
+  subscriptionId String?
+  amount        Float
+  currency      String
+  network       String
+  status        String
+  type          String
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  user          User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  customer      Customer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  subscription  Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  invoice       Invoice?
+  withdrawal    Withdrawal?
+}
+
+model Subscription {
+  id            String      @id @default(uuid())
+  userId        String?
+  customerId    String?
+  planId        String
+  status        String
+  spendLimit    Float?
+  nextBilling   DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  user          User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  customer      Customer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  plan          Plan        @relation(fields: [planId], references: [id], onDelete: Cascade)
+  transactions  Transaction[]
+}
+
+model Plan {
+  id            String        @id @default(uuid())
+  merchantId    String
+  name          String
+  description   String?
+  amount        Float
+  currency      String
+  interval      String
+  type          String
+  trialPeriod   Int?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  merchant      User          @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  subscriptions Subscription[]
+  payLink       PayLink?
+}
+
+model PayLink {
+  id              String    @id @default(uuid())
+  merchantId      String
+  planId          String?   @unique
+  name            String
+  description     String?
+  amount          Float
+  currency        String
+  type            String
+  url             String    @unique
+  redirectUrl     String?
+  customerId      String?
+  active          Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  merchant        User      @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  plan            Plan?     @relation(fields: [planId], references: [id], onDelete: SetNull)
+}
+
+model Invoice {
+  id            String      @id @default(uuid())
+  merchantId    String
+  customerId    String?
+  transactionId String?     @unique
+  invoiceNo     String      @unique
+  amount        Float
+  currency      String
+  status        String
+  issuedAt      DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  merchant      User        @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  customer      Customer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+}
+
+model Withdrawal {
+  id            String      @id @default(uuid())
+  merchantId    String
+  transactionId String?     @unique
+  amount        Float
+  currency      String
+  method        String
+  status        String
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  merchant      User        @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  transaction   Transaction? @relation(fields: [transactionId], references: [id], onDelete: SetNull)
+}
+
+model Wallet {
+  id            String    @id @default(uuid())
+  userId        String    @unique
+  address       String
+  network       String
+  balance       Float?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Integration {
+  id            String    @id @default(uuid())
+  merchantId    String
+  platform      String
+  status        String
+  webhookUrl    String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  merchant      User      @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+}
+
+model SupportTicket {
+  id            String    @id @default(uuid())
+  userId        String
+  subject       String
+  status        String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model KYB {
+  id            String    @id @default(uuid())
+  merchantId    String    @unique
+  status        String
+  submittedAt   DateTime?
+  documents     String[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  merchant      User      @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+}
+
+enum Role {
+  user
+  merchant
+}
+
+enum TeamRole {
+  admin
+  editor
+  viewer
+}
