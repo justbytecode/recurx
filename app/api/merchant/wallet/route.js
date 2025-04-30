@@ -8,9 +8,30 @@ export async function POST(request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { address } = await request.json();
-  if (!address) {
-    return NextResponse.json({ error: 'Wallet address is required' }, { status: 400 });
+  const { address, disconnect } = await request.json();
+
+  if (disconnect) {
+    try {
+      await prisma.apiKey.updateMany({
+        where: { userId: session.user.id, revoked: false },
+        data: { revoked: true },
+      });
+      await prisma.user.update({
+        where: { id: session.user.id },
+        data: { walletAddress: null },
+      });
+      await prisma.wallet.delete({
+        where: { userId: session.user.id },
+      }).catch(() => {});
+      return NextResponse.json({ message: 'Wallet disconnected and API keys revoked' });
+    } catch (error) {
+      console.error('Error disconnecting wallet:', error);
+      return NextResponse.json({ error: 'Failed to disconnect wallet' }, { status: 500 });
+    }
+  }
+
+  if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
+    return NextResponse.json({ error: 'Invalid wallet address' }, { status: 400 });
   }
 
   try {
@@ -31,30 +52,5 @@ export async function POST(request) {
   } catch (error) {
     console.error('Error updating wallet:', error);
     return NextResponse.json({ error: 'Failed to update wallet' }, { status: 500 });
-  }
-}
-
-export async function POST_disconnect(request) {
-  const session = await auth();
-  if (!session || session.user.role !== 'merchant') {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  try {
-    await prisma.apiKey.updateMany({
-      where: { userId: session.user.id, revoked: false },
-      data: { revoked: true },
-    });
-    await prisma.user.update({
-      where: { id: session.user.id },
-      data: { walletAddress: null },
-    });
-    await prisma.wallet.delete({
-      where: { userId: session.user.id },
-    }).catch(() => {});
-    return NextResponse.json({ message: 'Wallet disconnected and API keys revoked' });
-  } catch (error) {
-    console.error('Error disconnecting wallet:', error);
-    return NextResponse.json({ error: 'Failed to disconnect wallet' }, { status: 500 });
   }
 }

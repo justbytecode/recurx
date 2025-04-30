@@ -6,14 +6,19 @@ import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import WalletConnectPopup from '@/components/WalletConnectPopup';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { useAccount, useDisconnect } from 'wagmi';
+import { toast } from '@/components/ui/use-toast';
+import { Copy, LogOut } from 'lucide-react';
 import { useBalance } from 'wagmi';
+import { ConnectButton } from '@rainbow-me/rainbowkit';
 
-export default function Wallet() {
+export default function MerchantWallet() {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const { data: balance } = useBalance({
-    address: session?.user?.walletAddress,
-  });
+  const { address } = useAccount();
+  const { disconnect } = useDisconnect();
+  const { data: balance } = useBalance({ address: session?.user?.walletAddress });
 
   useEffect(() => {
     if (status === 'loading') return;
@@ -21,6 +26,42 @@ export default function Wallet() {
       router.push('/auth/signin');
     }
   }, [session, status, router]);
+
+  const handleDisconnect = async () => {
+    try {
+      const response = await fetch('/api/merchant/wallet', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.accessToken}`,
+        },
+        body: JSON.stringify({ disconnect: true }),
+      });
+      if (!response.ok) throw new Error('Failed to disconnect wallet');
+      disconnect();
+      toast({
+        title: 'Success',
+        description: 'Wallet disconnected successfully.',
+      });
+    } catch (error) {
+      console.error('Error disconnecting wallet:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to disconnect wallet.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleCopyAddress = () => {
+    if (session.user.walletAddress) {
+      navigator.clipboard.writeText(session.user.walletAddress);
+      toast({
+        title: 'Copied',
+        description: 'Wallet address copied to clipboard.',
+      });
+    }
+  };
 
   if (status === 'loading' || !session) return null;
 
@@ -36,15 +77,44 @@ export default function Wallet() {
           <CardHeader>
             <CardTitle className="text-lg font-semibold text-white">Wallet Details</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-6">
             {session.user.walletAddress ? (
               <div className="space-y-4">
-                <p className="text-sm text-gray-400">
-                  Address: {session.user.walletAddress}
-                </p>
-                <p className="text-sm text-gray-400">
-                  Balance: {balance ? `${balance.formatted} ${balance.symbol}` : 'Loading...'}
-                </p>
+                <div>
+                  <label className="text-sm font-medium text-gray-300">Wallet Address</label>
+                  <div className="mt-1 flex items-center gap-2">
+                    <p className="text-sm text-gray-400 break-all">{session.user.walletAddress}</p>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleCopyAddress}
+                      className="text-gray-400 hover:text-white"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-300">Balance</label>
+                  <p className="mt-1 text-sm text-gray-400">
+                    {balance ? `${balance.formatted} ${balance.symbol}` : 'Loading...'}
+                  </p>
+                </div>
+                <div className="flex gap-4">
+                  <ConnectButton
+                    showBalance={false}
+                    accountStatus="address"
+                    className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2 px-4 rounded-lg"
+                  />
+                  <Button
+                    onClick={handleDisconnect}
+                    variant="destructive"
+                    className="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg"
+                  >
+                    <LogOut className="w-4 h-4 mr-2" />
+                    Disconnect Wallet
+                  </Button>
+                </div>
               </div>
             ) : (
               <p className="text-sm text-gray-400">No wallet connected. Please connect a wallet to proceed.</p>

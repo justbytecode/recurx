@@ -57,7 +57,7 @@ export default function Sidebar({ role }) {
               alt="Payment Platform Logo"
               className="w-10 h-10 rounded-full"
             />
-            <h1 className="text-xl font-bold">Payment Platform</h1>
+            <h1 className="text-xl font-bold">Recurx</h1>
           </div>
         </div>
         <nav className="flex-1 flex flex-col gap-2">

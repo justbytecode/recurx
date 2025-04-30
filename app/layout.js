@@ -1,19 +1,40 @@
-import './globals.css';
+'use client';
+
 import { Inter } from 'next/font/google';
-import Providers from '@/components/Providers';
+import './globals.css';
+import { SessionProvider } from 'next-auth/react';
+import { WagmiProvider } from 'wagmi';
+import { RainbowKitProvider, getDefaultConfig } from '@rainbow-me/rainbowkit';
+import { sepolia, bscTestnet } from 'wagmi/chains';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import '@rainbow-me/rainbowkit/styles.css';
+import AuthProvider from '@/components/AuthProvider';
+
+// Initialize QueryClient
+const queryClient = new QueryClient();
 
 const inter = Inter({ subsets: ['latin'] });
 
-export const metadata = {
-  title: 'Payment Platform',
-  description: 'Decentralized payment platform for users and merchants',
-};
+const config = getDefaultConfig({
+  appName: 'Your App Name',
+  projectId: process.env.NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID,
+  chains: [sepolia, bscTestnet],
+  ssr: true,
+});
 
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body className={`${inter.className} bg-black text-white`}>
-        <Providers>{children}</Providers>
+      <body className={inter.className}>
+        <WagmiProvider config={config}>
+          <SessionProvider>
+            <AuthProvider>
+              <QueryClientProvider client={queryClient}>
+                <RainbowKitProvider>{children}</RainbowKitProvider>
+              </QueryClientProvider>
+            </AuthProvider>
+          </SessionProvider>
+        </WagmiProvider>
       </body>
     </html>
   );
