@@ -4,18 +4,13 @@ import { NextResponse } from 'next/server';
 
 export async function POST(request) {
   const session = await auth();
-
   if (!session || session.user.role !== 'user') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   const { address } = await request.json();
-
   if (!address) {
-    return NextResponse.json(
-      { error: 'Wallet address is required' },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: 'Wallet address is required' }, { status: 400 });
   }
 
   try {
@@ -25,7 +20,7 @@ export async function POST(request) {
       create: {
         userId: session.user.id,
         address,
-        network: 'Ethereum', // Default; update based on chain
+        network: 'Sepolia',
       },
     });
     await prisma.user.update({
@@ -35,9 +30,6 @@ export async function POST(request) {
     return NextResponse.json(wallet);
   } catch (error) {
     console.error('Error updating wallet:', error);
-    return NextResponse.json(
-      { error: 'Failed to update wallet' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to update wallet' }, { status: 500 });
   }
 }

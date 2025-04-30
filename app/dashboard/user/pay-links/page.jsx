@@ -11,50 +11,48 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/use-toast';
-import { Plus, Edit, Trash2 } from 'lucide-react';
+import { Copy, Plus, Trash2 } from 'lucide-react';
 import { subscribeToWebSocket } from '@/lib/websocket';
+import { nanoid } from 'nanoid';
 
-export default function Plans() {
+export default function UserPayLinks() {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const [plans, setPlans] = useState([]);
-  const [newPlan, setNewPlan] = useState({
+  const [payLinks, setPayLinks] = useState([]);
+  const [newPayLink, setNewPayLink] = useState({
     name: '',
-    description: '',
     amount: '',
     currency: 'ETH',
-    interval: 'monthly',
-    type: 'subscription',
+    type: 'one-time',
+    redirectUrl: '',
   });
-  const [editingPlan, setEditingPlan] = useState(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   useEffect(() => {
     if (status === 'loading') return;
-    if (!session || session.user.role !== 'merchant') {
+    if (!session || session.user.role !== 'user') {
       router.push('/auth/signin');
     } else if (!session.user.walletAddress) {
       // Keep popup open
     } else {
-      fetchPlans();
+      fetchPayLinks();
     }
   }, [session, status, router]);
 
-  const fetchPlans = async () => {
+  const fetchPayLinks = async () => {
     try {
-      const response = await fetch('/api/merchant/plans', {
+      const response = await fetch('/api/user/pay-links', {
         headers: { Authorization: `Bearer ${session.accessToken}` },
       });
-      if (!response.ok) throw new Error('Failed to fetch plans');
+      if (!response.ok) throw new Error('Failed to fetch pay links');
       const data = await response.json();
-      setPlans(data);
+      setPayLinks(data);
     } catch (error) {
-      console.error('Error fetching plans:', error);
+      console.error('Error fetching pay links:', error);
       toast({
         title: 'Error',
-        description: 'Failed to load plans.',
+        description: 'Failed to load pay links.',
         variant: 'destructive',
       });
     }
@@ -63,21 +61,15 @@ export default function Plans() {
   useEffect(() => {
     if (!session) return;
     const ws = subscribeToWebSocket(session.user.id, (data) => {
-      if (data.type === 'plan' && data.userId === session.user.id) {
-        if (data.action === 'created') {
-          setPlans((prev) => [...prev, data.plan]);
-        } else if (data.action === 'updated') {
-          setPlans((prev) => prev.map((p) => (p.id === data.plan.id ? data.plan : p)));
-        } else if (data.action === 'deleted') {
-          setPlans((prev) => prev.filter((p) => p.id !== data.plan.id));
-        }
+      if (data.type === 'payLink' && data.userId === session.user.id) {
+        setPayLinks((prev) => [...prev, data.payLink]);
       }
     });
     return () => ws.close();
   }, [session]);
 
-  const handleCreateOrUpdatePlan = async () => {
-    if (!newPlan.name || !newPlan.amount) {
+  const handleCreatePayLink = async () => {
+    if (!newPayLink.name || !newPayLink.amount) {
       toast({
         title: 'Error',
         description: 'Name and amount are required.',
@@ -87,75 +79,58 @@ export default function Plans() {
     }
 
     try {
-      const url = editingPlan ? '/api/merchant/plans' : '/api/merchant/plans';
-      const method = editingPlan ? 'PUT' : 'POST';
-      const body = editingPlan ? { ...newPlan, id: editingPlan.id } : newPlan;
-
-      const response = await fetch(url, {
-        method,
+      const response = await fetch('/api/user/pay-links', {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${session.accessToken}`,
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(newPayLink),
       });
-      if (!response.ok) throw new Error(`Failed to ${editingPlan ? 'update' : 'create'} plan`);
-      const plan = await response.json();
-      if (editingPlan) {
-        setPlans(plans.map((p) => (p.id === plan.id ? plan : p)));
-      } else {
-        setPlans([...plans, plan]);
-      }
+      if (!response.ok) throw new Error('Failed to create pay link');
+      const payLink = await response.json();
+      setPayLinks([...payLinks, payLink]);
       setIsDialogOpen(false);
-      setNewPlan({ name: '', description: '', amount: '', currency: 'ETH', interval: 'monthly', type: 'subscription' });
-      setEditingPlan(null);
+      setNewPayLink({ name: '', amount: '', currency: 'ETH', type: 'one-time', redirectUrl: '' });
+      navigator.clipboard.writeText(`${window.location.origin}/${payLink.url}`);
       toast({
-        title: 'Success',
-        description: `Plan ${editingPlan ? 'updated' : 'created'} successfully.`,
+        title: 'Pay Link Created',
+        description: 'Pay link copied to clipboard.',
       });
     } catch (error) {
-      console.error(`Error ${editingPlan ? 'updating' : 'creating'} plan:`, error);
+      console.error('Error creating pay link:', error);
       toast({
         title: 'Error',
-        description: `Failed to ${editingPlan ? 'update' : 'create'} plan.`,
+        description: 'Failed to create pay link.',
         variant: 'destructive',
       });
     }
   };
 
-  const handleEditPlan = (plan) => {
-    setEditingPlan(plan);
-    setNewPlan({
-      name: plan.name,
-      description: plan.description || '',
-      amount: plan.amount.toString(),
-      currency: plan.currency,
-      interval: plan.interval,
-      type: plan.type,
+  const handleCopyLink = (url) => {
+    navigator.clipboard.writeText(`${window.location.origin}/${url}`);
+    toast({
+      title: 'Copied',
+      description: 'Pay link copied to clipboard.',
     });
-    setIsDialogOpen(true);
   };
 
-  const handleDeletePlan = async (id) => {
+  const handleDeletePayLink = async (id) => {
     try {
-      await fetch('/api/merchant/plans', {
+      await fetch(`/api/user/pay-links/${id}`, {
         method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.accessToken}`,
-        },
-        body: JSON.stringify({ id }),
+        headers: { Authorization: `Bearer ${session.accessToken}` },
       });
-      setPlans(plans.filter((p) => p.id !== id));
+      setPayLinks(payLinks.filter((link) => link.id !== id));
       toast({
         title: 'Success',
-        description: 'Plan deleted successfully.',
+        description: 'Pay link deleted successfully.',
       });
     } catch (error) {
-      console.error('Error deleting plan:', error);
+      console.error('Error deleting pay link:', error);
       toast({
         title: 'Error',
-        description: 'Failed to delete plan.',
+        description: 'Failed to delete pay link.',
         variant: 'destructive',
       });
     }
@@ -166,46 +141,37 @@ export default function Plans() {
   return (
     <div className="flex min-h-screen bg-black">
       <Sidebar role={session.user.role} />
-      {!session.user.walletAddress && <WalletConnectPopup role="merchant" />}
+      {!session.user.walletAddress && <WalletConnectPopup role="user" />}
       <div className="flex-1 p-4 sm:p-6 md:p-8 lg:p-10 max-w-[100vw] overflow-x-hidden text-white">
         <header className="mb-6 flex items-center justify-between">
-          <h1 className="text-2xl sm:text-3xl font-bold">Subscription Plans</h1>
-          <Dialog open={isDialogOpen} onOpenChange={(open) => {
-            setIsDialogOpen(open);
-            if (!open) setEditingPlan(null);
-          }}>
+          <h1 className="text-2xl sm:text-3xl font-bold">Pay Links</h1>
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
               <Button className="bg-emerald-500 hover:bg-emerald-600">
-                <Plus className="w-4 h-4 mr-2" /> Create Plan
+                <Plus className="w-4 h-4 mr-2" /> Create Pay Link
               </Button>
             </DialogTrigger>
             <DialogContent className="bg-gray-900 text-white rounded-lg">
               <DialogHeader>
-                <DialogTitle>{editingPlan ? 'Edit Plan' : 'Create New Plan'}</DialogTitle>
+                <DialogTitle>Create New Pay Link</DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
                 <Input
-                  placeholder="Plan Name"
-                  value={newPlan.name}
-                  onChange={(e) => setNewPlan({ ...newPlan, name: e.target.value })}
-                  className="bg-gray-800 border-gray-700 text-white focus:ring-emerald-500"
-                />
-                <Textarea
-                  placeholder="Description (optional)"
-                  value={newPlan.description}
-                  onChange={(e) => setNewPlan({ ...newPlan, description: e.target.value })}
+                  placeholder="Pay Link Name"
+                  value={newPayLink.name}
+                  onChange={(e) => setNewPayLink({ ...newPayLink, name: e.target.value })}
                   className="bg-gray-800 border-gray-700 text-white focus:ring-emerald-500"
                 />
                 <Input
                   placeholder="Amount"
                   type="number"
-                  value={newPlan.amount}
-                  onChange={(e) => setNewPlan({ ...newPlan, amount: e.target.value })}
+                  value={newPayLink.amount}
+                  onChange={(e) => setNewPayLink({ ...newPayLink, amount: e.target.value })}
                   className="bg-gray-800 border-gray-700 text-white focus:ring-emerald-500"
                 />
                 <Select
-                  onValueChange={(value) => setNewPlan({ ...newPlan, currency: value })}
-                  value={newPlan.currency}
+                  onValueChange={(value) => setNewPayLink({ ...newPayLink, currency: value })}
+                  value={newPayLink.currency}
                 >
                   <SelectTrigger className="bg-gray-800 border-gray-700 text-white">
                     <SelectValue placeholder="Currency" />
@@ -218,20 +184,25 @@ export default function Plans() {
                   </SelectContent>
                 </Select>
                 <Select
-                  onValueChange={(value) => setNewPlan({ ...newPlan, interval: value })}
-                  value={newPlan.interval}
+                  onValueChange={(value) => setNewPayLink({ ...newPayLink, type: value })}
+                  value={newPayLink.type}
                 >
                   <SelectTrigger className="bg-gray-800 border-gray-700 text-white">
-                    <SelectValue placeholder="Interval" />
+                    <SelectValue placeholder="Type" />
                   </SelectTrigger>
                   <SelectContent className="bg-gray-800 border-gray-700 text-white">
-                    <SelectItem value="weekly">Weekly</SelectItem>
-                    <SelectItem value="monthly">Monthly</SelectItem>
-                    <SelectItem value="yearly">Yearly</SelectItem>
+                    <SelectItem value="one-time">One-Time</SelectItem>
+                    <SelectItem value="recurring">Recurring</SelectItem>
                   </SelectContent>
                 </Select>
-                <Button onClick={handleCreateOrUpdatePlan} className="bg-emerald-500 hover:bg-emerald-600">
-                  {editingPlan ? 'Update Plan' : 'Create Plan'}
+                <Input
+                  placeholder="Redirect URL (optional)"
+                  value={newPayLink.redirectUrl}
+                  onChange={(e) => setNewPayLink({ ...newPayLink, redirectUrl: e.target.value })}
+                  className="bg-gray-800 border-gray-700 text-white focus:ring-emerald-500"
+                />
+                <Button onClick={handleCreatePayLink} className="bg-emerald-500 hover:bg-emerald-600">
+                  Create Pay Link
                 </Button>
               </div>
             </DialogContent>
@@ -239,7 +210,7 @@ export default function Plans() {
         </header>
         <Card className="shadow-lg bg-gray-900 rounded-xl border-none">
           <CardHeader>
-            <CardTitle className="text-lg font-semibold text-white">Your Plans</CardTitle>
+            <CardTitle className="text-lg font-semibold text-white">Your Pay Links</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
@@ -249,43 +220,53 @@ export default function Plans() {
                     <TableHead className="text-sm text-gray-300">Name</TableHead>
                     <TableHead className="text-sm text-gray-300">Amount</TableHead>
                     <TableHead className="text-sm text-gray-300">Currency</TableHead>
-                    <TableHead className="text-sm text-gray-300">Interval</TableHead>
+                    <TableHead className="text-sm text-gray-300">Type</TableHead>
+                    <TableHead className="text-sm text-gray-300">Status</TableHead>
                     <TableHead className="text-sm text-gray-300">Created</TableHead>
                     <TableHead className="text-sm text-gray-300">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {plans.length === 0 ? (
+                  {payLinks.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center text-sm text-gray-400 py-6">
-                        No plans found.
+                      <TableCell colSpan={7} className="text-center text-sm text-gray-400 py-6">
+                        No pay links found.
                       </TableCell>
                     </TableRow>
                   ) : (
-                    plans.map((plan) => (
-                      <TableRow key={plan.id} className="hover:bg-gray-800">
-                        <TableCell className="font-medium text-sm text-white">{plan.name}</TableCell>
-                        <TableCell className="text-sm text-gray-400">{plan.amount.toFixed(2)}</TableCell>
-                        <TableCell className="text-sm text-gray-400">{plan.currency}</TableCell>
-                        <TableCell className="text-sm text-gray-400">{plan.interval}</TableCell>
+                    payLinks.map((link) => (
+                      <TableRow key={link.id} className="hover:bg-gray-800">
+                        <TableCell className="font-medium text-sm text-white">{link.name}</TableCell>
+                        <TableCell className="text-sm text-gray-400">{link.amount.toFixed(2)}</TableCell>
+                        <TableCell className="text-sm text-gray-400">{link.currency}</TableCell>
+                        <TableCell className="text-sm text-gray-400">{link.type}</TableCell>
+                        <TableCell className="text-sm">
+                          <span
+                            className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              link.active ? 'bg-green-100 text-emerald-600' : 'bg-red-100 text-red-600'
+                            }`}
+                          >
+                            {link.active ? 'Active' : 'Inactive'}
+                          </span>
+                        </TableCell>
                         <TableCell className="text-sm text-gray-400">
-                          {new Date(plan.createdAt).toLocaleDateString()}
+                          {new Date(link.createdAt).toLocaleDateString()}
                         </TableCell>
                         <TableCell className="text-sm">
                           <div className="flex space-x-2">
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => handleEditPlan(plan)}
+                              onClick={() => handleCopyLink(link.url)}
                               className="flex items-center gap-1 border-gray-700 hover:bg-gray-700 text-white"
                             >
-                              <Edit className="w-4 h-4" />
-                              Edit
+                              <Copy className="w-4 h-4" />
+                              Copy
                             </Button>
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => handleDeletePlan(plan.id)}
+                              onClick={() => handleDeletePayLink(link.id)}
                               className="flex items-center gap-1 border-gray-700 hover:bg-red-700 text-red-400"
                             >
                               <Trash2 className="w-4 h-4" />

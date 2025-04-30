@@ -1,4 +1,3 @@
-
 'use client';
 
 import { signIn } from 'next-auth/react';
@@ -33,13 +32,13 @@ export default function SignInPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <Card className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center bg-black">
+      <Card className="w-full max-w-md bg-gray-900 text-white border-none rounded-lg">
         <CardHeader>
           <CardTitle>Sign In</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col items-center">
-          <Button onClick={handleSignIn} className="px-4 py-2 bg-primary-merchant hover:bg-emerald-600">
+          <Button onClick={handleSignIn} className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600">
             Sign in with Google
           </Button>
           {error && <p className="text-red-500 mt-2">{error}</p>}

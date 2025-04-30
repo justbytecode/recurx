@@ -1,29 +1,27 @@
 import { auth } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { NextResponse } from 'next/server';
-import { broadcast } from '@/server/websocket';
+import { nanoid } from 'nanoid';
 
 export async function GET(request) {
   const session = await auth();
-
   if (!session || session.user.role !== 'merchant') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   try {
-    const payLinks = await prisma.payLink.findMany({
-      where: { merchantId: session.user.id },
+    const apiKeys = await prisma.apiKey.findMany({
+      where: { userId: session.user.id },
     });
-    return NextResponse.json(payLinks);
+    return NextResponse.json(apiKeys);
   } catch (error) {
-    console.error('Error fetching pay links:', error);
-    return NextResponse.json({ error: 'Failed to fetch pay links' }, { status: 500 });
+    console.error('Error fetching API keys:', error);
+    return NextResponse.json({ error: 'Failed to fetch API keys' }, { status: 500 });
   }
 }
 
 export async function POST(request) {
   const session = await auth();
-
   if (!session || session.user.role !== 'merchant') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
@@ -32,35 +30,45 @@ export async function POST(request) {
     return NextResponse.json({ error: 'Wallet not connected' }, { status: 400 });
   }
 
-  const { name, amount, currency, type, url, redirectUrl, merchantWallet } = await request.json();
-
-  if (!name || !amount || isNaN(amount) || amount <= 0 || !url || !merchantWallet) {
-    return NextResponse.json({ error: 'Name, valid amount, URL, and merchant wallet are required' }, { status: 400 });
+  const { name } = await request.json();
+  if (!name) {
+    return NextResponse.json({ error: 'Name is required' }, { status: 400 });
   }
 
   try {
-    const payLink = await prisma.payLink.create({
+    const clientId = `client_${nanoid(16)}`;
+    const clientSecret = `secret_${nanoid(32)}`;
+    const apiKey = await prisma.apiKey.create({
       data: {
-        merchantId: session.user.id,
+        userId: session.user.id,
         name,
-        amount: parseFloat(amount),
-        currency,
-        type,
-        url,
-        redirectUrl,
-        active: true,
+        key: clientSecret,
+        clientId,
+        walletAddress: session.user.walletAddress,
       },
     });
-
-    broadcast({
-      type: 'payLink',
-      userId: session.user.id,
-      payLink,
-    });
-
-    return NextResponse.json(payLink);
+    return NextResponse.json({ ...apiKey, clientSecret });
   } catch (error) {
-    console.error('Error creating pay link:', error);
-    return NextResponse.json({ error: 'Failed to create pay link' }, { status: 500 });
+    console.error('Error creating API key:', error);
+    return NextResponse.json({ error: 'Failed to create API key' }, { status: 500 });
+  }
+}
+
+export async function DELETE(request, { params }) {
+  const session = await auth();
+  if (!session || session.user.role !== 'merchant') {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const { id } = params;
+  try {
+    await prisma.apiKey.update({
+      where: { id, userId: session.user.id },
+      data: { revoked: true },
+    });
+    return NextResponse.json({ message: 'API key revoked' });
+  } catch (error) {
+    console.error('Error revoking API key:', error);
+    return NextResponse.json({ error: 'Failed to revoke API key' }, { status: 500 });
   }
 }

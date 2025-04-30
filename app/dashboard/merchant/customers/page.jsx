@@ -4,14 +4,15 @@ import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
+import WalletConnectPopup from '@/components/WalletConnectPopup';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import toast from 'react-hot-toast'; // Import toast from react-hot-toast
+import { toast } from '@/components/ui/use-toast';
 import { Search, Plus } from 'lucide-react';
-import { subscribeToWebSocket, sendWebSocketMessage } from '@/lib/websocket';
+import { subscribeToWebSocket } from '@/lib/websocket';
 
 export default function Customers() {
   const { data: session, status } = useSession();
@@ -30,6 +31,8 @@ export default function Customers() {
     if (status === 'loading') return;
     if (!session || session.user.role !== 'merchant') {
       router.push('/auth/signin');
+    } else if (!session.user.walletAddress) {
+      // Keep popup open
     } else {
       fetchCustomers();
     }
@@ -47,13 +50,10 @@ export default function Customers() {
       setCustomers(data);
     } catch (error) {
       console.error('Error fetching customers:', error);
-      toast.error('Failed to load customers.', {
-        style: {
-          borderRadius: '8px',
-          background: '#EF4444',
-          color: '#fff',
-          padding: '16px',
-        },
+      toast({
+        title: 'Error',
+        description: 'Failed to load customers.',
+        variant: 'destructive',
       });
     }
   };
@@ -70,16 +70,14 @@ export default function Customers() {
 
   const handleAddCustomer = async () => {
     if (!newCustomer.name || !newCustomer.walletAddress) {
-      toast.error('Name and wallet address are required.', {
-        style: {
-          borderRadius: '8px',
-          background: '#EF4444',
-          color: '#fff',
-          padding: '16px',
-        },
+      toast({
+        title: 'Error',
+        description: 'Name and wallet address are required.',
+        variant: 'destructive',
       });
       return;
     }
+
     try {
       const response = await fetch('/api/merchant/customers', {
         method: 'POST',
@@ -96,64 +94,52 @@ export default function Customers() {
       setCustomers([...customers, customer]);
       setIsDialogOpen(false);
       setNewCustomer({ name: '', email: '', walletAddress: '', billingDetails: {} });
-      toast.success('The customer has been added successfully.', {
-        style: {
-          borderRadius: '8px',
-          background: '#10B981',
-          color: '#fff',
-          padding: '16px',
-        },
-      });
-
-      const ws = new WebSocket(process.env.NEXT_PUBLIC_WEBSOCKET_URL);
-      sendWebSocketMessage(ws, {
-        type: 'customer',
-        userId: session.user.id,
-        customer,
+      toast({
+        title: 'Success',
+        description: 'Customer added successfully.',
       });
     } catch (error) {
       console.error('Error adding customer:', error);
-      toast.error('Failed to add customer.', {
-        style: {
-          borderRadius: '8px',
-          background: '#EF4444',
-          color: '#fff',
-          padding: '16px',
-        },
+      toast({
+        title: 'Error',
+        description: 'Failed to add customer.',
+        variant: 'destructive',
       });
     }
   };
 
-  const filteredCustomers = customers.filter((customer) =>
-    customer.name.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredCustomers = customers.filter(
+    (customer) =>
+      customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      customer.email?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   if (status === 'loading' || !session) return null;
 
   return (
-    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+    <div className="flex min-h-screen bg-black">
       <Sidebar role={session.user.role} />
-      <div className="flex-1 p-4 sm:p-6 md:p-8 lg:p-10 max-w-[100vw] overflow-x-hidden">
-        <header className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Customers</h1>
-          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-            <div className="relative w-full sm:w-64">
-              <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-500" />
+      {!session.user.walletAddress && <WalletConnectPopup role="merchant" />}
+      <div className="flex-1 p-4 sm:p-6 md:p-8 lg:p-10 max-w-[100vw] overflow-x-hidden text-white">
+        <header className="mb-6 flex items-center justify-between">
+          <h1 className="text-2xl sm:text-3xl font-bold">Customers</h1>
+          <div className="flex items-center gap-4">
+            <div className="relative">
+              <Search className="absolute left-2 top-2.5 h-4 w-4 text-gray-400" />
               <Input
                 placeholder="Search customers..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-8 border-gray-300 focus:ring-primary-merchant"
+                className="pl-8 bg-gray-800 border-gray-700 text-white focus:ring-emerald-500"
               />
             </div>
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
-                <Button className="bg-primary-merchant hover:bg-emerald-600 flex items-center gap-2">
-                  <Plus className="w-4 h-4" />
-                  Add Customer
+                <Button className="bg-emerald-500 hover:bg-emerald-600">
+                  <Plus className="w-4 h-4 mr-2" /> Add Customer
                 </Button>
               </DialogTrigger>
-              <DialogContent className="bg-white rounded-lg">
+              <DialogContent className="bg-gray-900 text-white rounded-lg">
                 <DialogHeader>
                   <DialogTitle>Add New Customer</DialogTitle>
                 </DialogHeader>
@@ -162,59 +148,59 @@ export default function Customers() {
                     placeholder="Name"
                     value={newCustomer.name}
                     onChange={(e) => setNewCustomer({ ...newCustomer, name: e.target.value })}
-                    className="border-gray-300 focus:ring-primary-merchant"
+                    className="bg-gray-800 border-gray-700 text-white focus:ring-emerald-500"
                   />
                   <Input
                     placeholder="Email (optional)"
                     value={newCustomer.email}
                     onChange={(e) => setNewCustomer({ ...newCustomer, email: e.target.value })}
-                    className="border-gray-300 focus:ring-primary-merchant"
+                    className="bg-gray-800 border-gray-700 text-white focus:ring-emerald-500"
                   />
                   <Input
                     placeholder="Wallet Address"
                     value={newCustomer.walletAddress}
                     onChange={(e) => setNewCustomer({ ...newCustomer, walletAddress: e.target.value })}
-                    className="border-gray-300 focus:ring-primary-merchant"
+                    className="bg-gray-800 border-gray-700 text-white focus:ring-emerald-500"
                   />
-                  <Button onClick={handleAddCustomer} className="bg-primary-merchant hover:bg-emerald-600">
-                    Add
+                  <Button onClick={handleAddCustomer} className="bg-emerald-500 hover:bg-emerald-600">
+                    Add Customer
                   </Button>
                 </div>
               </DialogContent>
             </Dialog>
           </div>
         </header>
-        <Card className="shadow-lg bg-white rounded-xl">
+        <Card className="shadow-lg bg-gray-900 rounded-xl border-none">
           <CardHeader>
-            <CardTitle className="text-lg font-semibold text-gray-900">Your Customers</CardTitle>
+            <CardTitle className="text-lg font-semibold text-white">Your Customers</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="text-sm text-gray-700">Name</TableHead>
-                    <TableHead className="text-sm text-gray-700">Email</TableHead>
-                    <TableHead className="text-sm text-gray-700">Wallet Address</TableHead>
-                    <TableHead className="text-sm text-gray-700">Created</TableHead>
+                    <TableHead className="text-sm text-gray-300">Name</TableHead>
+                    <TableHead className="text-sm text-gray-300">Email</TableHead>
+                    <TableHead className="text-sm text-gray-300">Wallet Address</TableHead>
+                    <TableHead className="text-sm text-gray-300">Created</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredCustomers.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center text-sm text-gray-500 py-6">
-                        No customers found. Add a new customer to get started.
+                      <TableCell colSpan={4} className="text-center text-sm text-gray-400 py-6">
+                        No customers found.
                       </TableCell>
                     </TableRow>
                   ) : (
                     filteredCustomers.map((customer) => (
-                      <TableRow key={customer.id} className="hover:bg-gray-50">
-                        <TableCell className="font-medium text-sm text-gray-900">{customer.name}</TableCell>
-                        <TableCell className="text-sm text-gray-600">{customer.email || 'N/A'}</TableCell>
-                        <TableCell className="text-sm text-gray-600 truncate max-w-[200px]">
-                          {customer.walletAddress}
+                      <TableRow key={customer.id} className="hover:bg-gray-800">
+                        <TableCell className="font-medium text-sm text-white">{customer.name}</TableCell>
+                        <TableCell className="text-sm text-gray-400">{customer.email || 'N/A'}</TableCell>
+                        <TableCell className="text-sm text-gray-400">
+                          {customer.walletAddress.slice(0, 6)}...{customer.walletAddress.slice(-4)}
                         </TableCell>
-                        <TableCell className="text-sm text-gray-600">
+                        <TableCell className="text-sm text-gray-400">
                           {new Date(customer.createdAt).toLocaleDateString()}
                         </TableCell>
                       </TableRow>

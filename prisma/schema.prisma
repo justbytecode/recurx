@@ -14,7 +14,7 @@ model User {
   emailVerified DateTime?
   image         String?
   role          Role            @default(user)
-  walletAddress String?
+  walletAddress String?         @unique
   accounts      Account[]
   sessions      Session[]
   verificationTokens VerificationToken[]
@@ -81,13 +81,15 @@ model VerificationToken {
 }
 
 model ApiKey {
-  id        String   @id @default(uuid())
-  userId    String
-  name      String
-  key       String   @unique
-  createdAt DateTime @default(now())
-  revoked   Boolean  @default(false)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id            String    @id @default(uuid())
+  userId        String
+  name          String
+  clientId      String    @unique
+  clientSecret  String    @unique
+  walletAddress String?
+  createdAt     DateTime  @default(now())
+  revoked       Boolean   @default(false)
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model TeamMember {
@@ -103,20 +105,19 @@ model TeamMember {
 }
 
 model Customer {
-  id              String        @id @default(uuid())
-  userId          String?
-  merchantId      String
-  name            String
-  email           String?
-  walletAddress   String
-  billingDetails  Json?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  user            User?         @relation("CustomerToUser", fields: [userId], references: [id], onDelete: SetNull)
-  merchant        User          @relation("CustomerToMerchant", fields: [merchantId], references: [id], onDelete: Cascade)
-  transactions    Transaction[]
-  subscriptions   Subscription[]
-  invoices        Invoice[]
+  id            String        @id @default(uuid())
+  userId        String?
+  merchantId    String
+  name          String
+  email         String?
+  walletAddress String
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  user          User?         @relation("CustomerToUser", fields: [userId], references: [id], onDelete: SetNull)
+  merchant      User          @relation("CustomerToMerchant", fields: [merchantId], references: [id], onDelete: Cascade)
+  transactions  Transaction[]
+  subscriptions Subscription[]
+  invoices      Invoice[]
 }
 
 model Transaction {
@@ -124,16 +125,19 @@ model Transaction {
   userId        String?
   customerId    String?
   subscriptionId String?
+  payLinkId     String?
   amount        Float
   currency      String
   network       String
   status        String
   type          String
+  transactionHash String?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
   user          User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
   customer      Customer?   @relation(fields: [customerId], references: [id], onDelete: SetNull)
   subscription  Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  payLink       PayLink?    @relation(fields: [payLinkId], references: [id], onDelete: SetNull)
   invoice       Invoice?
   withdrawal    Withdrawal?
 }
@@ -161,6 +165,7 @@ model Plan {
   description   String?
   amount        Float
   currency      String
+  network       String
   interval      String
   type          String
   trialPeriod   Int?
@@ -172,22 +177,25 @@ model Plan {
 }
 
 model PayLink {
-  id              String    @id @default(uuid())
-  merchantId      String
-  planId          String?   @unique
-  name            String
-  description     String?
-  amount          Float
-  currency        String
-  type            String
-  url             String    @unique
-  redirectUrl     String?
-  customerId      String?
-  active          Boolean   @default(true)
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  merchant        User      @relation(fields: [merchantId], references: [id], onDelete: Cascade)
-  plan            Plan?     @relation(fields: [planId], references: [id], onDelete: SetNull)
+  id            String    @id @default(uuid())
+  merchantId    String
+  planId        String?   @unique
+  name          String
+  description   String?
+  amount        Float
+  currency      String
+  network       String
+  type          String
+  url           String    @unique
+  redirectUrl   String?
+  customerId    String?
+  active        Boolean   @default(true)
+  merchantWallet String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  merchant      User      @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  plan          Plan?     @relation(fields: [planId], references: [id], onDelete: SetNull)
+  transactions  Transaction[]
 }
 
 model Invoice {
@@ -198,6 +206,7 @@ model Invoice {
   invoiceNo     String      @unique
   amount        Float
   currency      String
+  network       String
   status        String
   issuedAt      DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -212,6 +221,7 @@ model Withdrawal {
   transactionId String?     @unique
   amount        Float
   currency      String
+  network       String
   method        String
   status        String
   createdAt     DateTime    @default(now())

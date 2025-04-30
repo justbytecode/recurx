@@ -10,6 +10,10 @@ contract PayRecurx is ReentrancyGuard, Ownable {
     uint256 public platformFeeBps = 50; // 0.5%
     uint256 public constant FEE_DENOMINATOR = 10000;
 
+    // Minimum plan amounts
+    uint256 public constant MINIMUM_AMOUNT_ETH = 10620000000000000; // 0.01062 ETH in wei
+    uint256 public constant MINIMUM_AMOUNT_USDC_USDT = 19000000; // $19 in 6-decimal units
+
     struct Plan {
         address merchantWallet;
         uint256 amount;
@@ -51,8 +55,8 @@ contract PayRecurx is ReentrancyGuard, Ownable {
     constructor(address _platformWallet) Ownable(msg.sender) {
         platformWallet = _platformWallet;
         supportedCurrencies["ETH"] = true;
-        supportedCurrencies["MATIC"] = true;
-        supportedCurrencies["BNB"] = true;
+        supportedCurrencies["USDC"] = true;
+        supportedCurrencies["USDT"] = true;
     }
 
     function setTokenAddress(string memory currency, address tokenAddress) external onlyOwner {
@@ -60,12 +64,29 @@ contract PayRecurx is ReentrancyGuard, Ownable {
         supportedCurrencies[currency] = true;
     }
 
-    function createPlan(address merchantWallet, uint256 amount, string memory currency, uint256 interval, string memory name, string memory description) external nonReentrant returns (uint256) {
+    function createPlan(
+        address merchantWallet,
+        uint256 amount,
+        string memory currency,
+        uint256 interval,
+        string memory name,
+        string memory description
+    ) external nonReentrant returns (uint256) {
         require(merchantWallet != address(0), "Invalid merchant wallet");
         require(amount > 0, "Amount must be greater than 0");
         require(interval > 0, "Interval must be greater than 0");
         require(supportedCurrencies[currency], "Unsupported currency");
         require(bytes(name).length > 0, "Name required");
+
+        // Enforce minimum amounts
+        if (keccak256(bytes(currency)) == keccak256(bytes("ETH"))) {
+            require(amount >= MINIMUM_AMOUNT_ETH, "Amount below minimum (0.01062 ETH)");
+        } else if (
+            keccak256(bytes(currency)) == keccak256(bytes("USDC")) ||
+            keccak256(bytes(currency)) == keccak256(bytes("USDT"))
+        ) {
+            require(amount >= MINIMUM_AMOUNT_USDC_USDT, "Amount below minimum ($19)");
+        }
 
         planCount++;
         uint256 planId = planCount;
@@ -85,7 +106,14 @@ contract PayRecurx is ReentrancyGuard, Ownable {
         return planId;
     }
 
-    function updatePlan(uint256 planId, uint256 amount, string memory currency, uint256 interval, string memory name, string memory description) external nonReentrant {
+    function updatePlan(
+        uint256 planId,
+        uint256 amount,
+        string memory currency,
+        uint256 interval,
+        string memory name,
+        string memory description
+    ) external nonReentrant {
         Plan storage plan = plans[planId];
         require(plan.merchantWallet == msg.sender, "Not plan owner");
         require(plan.active, "Plan not active");
@@ -93,6 +121,16 @@ contract PayRecurx is ReentrancyGuard, Ownable {
         require(interval > 0, "Interval must be greater than 0");
         require(supportedCurrencies[currency], "Unsupported currency");
         require(bytes(name).length > 0, "Name required");
+
+        // Enforce minimum amounts
+        if (keccak256(bytes(currency)) == keccak256(bytes("ETH"))) {
+            require(amount >= MINIMUM_AMOUNT_ETH, "Amount below minimum (0.01062 ETH)");
+        } else if (
+            keccak256(bytes(currency)) == keccak256(bytes("USDC")) ||
+            keccak256(bytes(currency)) == keccak256(bytes("USDT"))
+        ) {
+            require(amount >= MINIMUM_AMOUNT_USDC_USDT, "Amount below minimum ($19)");
+        }
 
         plan.amount = amount;
         plan.currency = currency;
@@ -160,17 +198,16 @@ contract PayRecurx is ReentrancyGuard, Ownable {
         require(sub.amount <= sub.spendLimit || sub.spendLimit == 0, "Exceeds spend limit");
 
         uint256 amount = sub.amount;
+        uint256 fee = (amount * platformFeeBps) / FEE_DENOMINATOR;
+        uint256 merchantAmount = amount - fee;
+
         if (supportedTokens[plan.currency] != address(0)) {
             IERC20 token = IERC20(supportedTokens[plan.currency]);
-            uint256 fee = (amount * platformFeeBps) / FEE_DENOMINATOR;
-            uint256 merchantAmount = amount - fee;
 
             require(token.transferFrom(msg.sender, plan.merchantWallet, merchantAmount), "Merchant transfer failed");
             require(token.transferFrom(msg.sender, platformWallet, fee), "Fee transfer failed");
         } else {
             require(msg.value >= amount, "Insufficient funds");
-            uint256 fee = (amount * platformFeeBps) / FEE_DENOMINATOR;
-            uint256 merchantAmount = amount - fee;
 
             (bool merchantSuccess, ) = plan.merchantWallet.call{value: merchantAmount}("");
             require(merchantSuccess, "Merchant transfer failed");
@@ -178,9 +215,8 @@ contract PayRecurx is ReentrancyGuard, Ownable {
             require(platformSuccess, "Fee transfer failed");
         }
 
-        uint256 fee = (amount * platformFeeBps) / FEE_DENOMINATOR;
         sub.nextPayment += plan.interval;
-        emit PaymentProcessed(subscriptionId, plan.merchantWallet, msg.sender, amount, plan.currency, fee, amount - fee);
+        emit PaymentProcessed(subscriptionId, plan.merchantWallet, msg.sender, amount, plan.currency, fee, merchantAmount);
     }
 
     function processPayLinkPayment(address merchantWallet, uint256 amount, string memory currency) external payable nonReentrant {

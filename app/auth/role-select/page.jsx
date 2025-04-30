@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -7,7 +6,7 @@ import { useSession } from 'next-auth/react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import toast from 'react-hot-toast';
+import { toast } from '@/components/ui/use-toast';
 
 export default function RoleSelectPage() {
   const { data: session, status } = useSession();
@@ -53,27 +52,27 @@ export default function RoleSelectPage() {
   };
 
   if (status === 'loading' || !session) {
-    return <div>Loading...</div>;
+    return <div className="text-white bg-black min-h-screen flex items-center justify-center">Loading...</div>;
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
+    <div className="min-h-screen flex items-center justify-center bg-black">
       <Dialog open={isOpen} onOpenChange={setIsOpen}>
-        <DialogContent>
+        <DialogContent className="bg-gray-900 text-white rounded-lg">
           <DialogHeader>
             <DialogTitle>Select Your Role</DialogTitle>
           </DialogHeader>
-          <Card className="w-full">
+          <Card className="w-full bg-gray-800 border-none">
             <CardHeader>
-              <CardTitle>Welcome, {session.user.name}</CardTitle>
+              <CardTitle className="text-white">Welcome, {session.user.name}</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col items-center space-y-4">
-              <p>Please select your role to proceed:</p>
+              <p className="text-gray-300">Please select your role to proceed:</p>
               <div className="flex space-x-4">
-                <Button onClick={() => handleRoleSelect('merchant')} className="bg-primary-merchant hover:bg-emerald-600">
+                <Button onClick={() => handleRoleSelect('merchant')} className="bg-emerald-500 hover:bg-emerald-600">
                   Merchant
                 </Button>
-                <Button onClick={() => handleRoleSelect('user')} className="bg-primary-user hover:bg-blue-600">
+                <Button onClick={() => handleRoleSelect('user')} className="bg-blue-500 hover:bg-blue-600">
                   User
                 </Button>
               </div>

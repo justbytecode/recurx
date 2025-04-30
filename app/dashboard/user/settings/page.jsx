@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { toast } from '@/components/ui/use-toast';
 import { useAccount, useDisconnect } from 'wagmi';
 
-export default function Settings() {
+export default function UserSettings() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const { address } = useAccount();
@@ -20,7 +20,7 @@ export default function Settings() {
 
   useEffect(() => {
     if (status === 'loading') return;
-    if (!session || session.user.role !== 'merchant') {
+    if (!session || session.user.role !== 'user') {
       router.push('/auth/signin');
     } else {
       setProfile({ name: session.user.name, email: session.user.email });
@@ -46,7 +46,7 @@ export default function Settings() {
 
   const handleDisconnectWallet = async () => {
     try {
-      await fetch('/api/merchant/wallet/disconnect', {
+      await fetch('/api/user/wallet/disconnect', {
         method: 'POST',
         headers: { Authorization: `Bearer ${session.accessToken}` },
       });
@@ -70,7 +70,7 @@ export default function Settings() {
   return (
     <div className="flex min-h-screen bg-black">
       <Sidebar role={session.user.role} />
-      {!session.user.walletAddress && <WalletConnectPopup role="merchant" />}
+      {!session.user.walletAddress && <WalletConnectPopup role="user" />}
       <div className="flex-1 p-4 sm:p-6 md:p-8 lg:p-10 max-w-[100vw] overflow-x-hidden text-white">
         <header className="mb-6">
           <h1 className="text-2xl sm:text-3xl font-bold">Settings</h1>

@@ -4,7 +4,6 @@ import { NextResponse } from 'next/server';
 
 export async function GET(request) {
   const session = await auth();
-
   if (!session || session.user.role !== 'user') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
@@ -16,9 +15,6 @@ export async function GET(request) {
     return NextResponse.json(transactions);
   } catch (error) {
     console.error('Error fetching transactions:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch transactions' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to fetch transactions' }, { status: 500 });
   }
 }

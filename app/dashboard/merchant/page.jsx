@@ -1,15 +1,18 @@
-
 'use client';
 
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
+import WalletConnectPopup from '@/components/WalletConnectPopup';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { DollarSign, Users, FileText, Link } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { DollarSign, Users, FileText, Link, BarChart2 } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Toaster } from '@/components/ui/toaster';
 import { subscribeToWebSocket } from '@/lib/websocket';
 import { useBalance } from 'wagmi';
+import { nanoid } from 'nanoid';
 
 export default function MerchantDashboard() {
   const { data: session, status } = useSession();
@@ -19,7 +22,9 @@ export default function MerchantDashboard() {
     activeCustomers: 0,
     pendingInvoices: 0,
     activePayLinks: 0,
+    activeSubscriptions: 0,
   });
+  const [chartData, setChartData] = useState([]);
   const { data: balance } = useBalance({
     address: session?.user?.walletAddress,
   });
@@ -28,29 +33,46 @@ export default function MerchantDashboard() {
     if (status === 'loading') return;
     if (!session || session.user.role !== 'merchant') {
       router.push('/auth/signin');
+    } else if (!session.user.walletAddress) {
+      // Keep popup open until wallet is connected
+    } else {
+      fetchStats();
     }
   }, [session, status, router]);
 
-  useEffect(() => {
-    async function fetchStats() {
-      if (!session) return;
-      try {
-        const response = await fetch('/api/merchant/stats', {
-          headers: { Authorization: `Bearer ${session.accessToken}` },
-        });
-        const data = await response.json();
-        setStats(data);
-      } catch (error) {
-        console.error('Error fetching stats:', error);
-        toast({
-          title: 'Error',
-          description: 'Failed to load dashboard stats.',
-          variant: 'destructive',
-        });
-      }
+  const fetchStats = async () => {
+    try {
+      const response = await fetch('/api/merchant/stats', {
+        headers: { Authorization: `Bearer ${session.accessToken}` },
+      });
+      const data = await response.json();
+      setStats(data);
+
+      // Fetch transaction data for chart
+      const txResponse = await fetch('/api/merchant/transactions', {
+        headers: { Authorization: `Bearer ${session.accessToken}` },
+      });
+      const transactions = await txResponse.json();
+      const chart = transactions.reduce((acc, tx) => {
+        const date = new Date(tx.createdAt).toLocaleDateString();
+        const existing = acc.find((item) => item.date === date);
+        if (existing) {
+          existing.amount += tx.amount;
+        } else {
+          acc.push({ date, amount: tx.amount });
+        }
+        return acc;
+      }, []).slice(-30);
+      setChartData(chart);
+    } catch (error) {
+      console.error('Error fetching stats:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load dashboard stats.',
+        variant: 'destructive',
+      });
     }
-    fetchStats();
-  }, [session]);
+  };
 
   useEffect(() => {
     if (!session) return;
@@ -61,71 +83,149 @@ export default function MerchantDashboard() {
             ...prev,
             totalRevenue: prev.totalRevenue + data.transaction.amount,
           }));
+          setChartData((prev) => {
+            const date = new Date(data.transaction.createdAt).toLocaleDateString();
+            const existing = prev.find((item) => item.date === date);
+            if (existing) {
+              existing.amount += data.transaction.amount;
+              return [...prev];
+            }
+            return [...prev, { date, amount: data.transaction.amount }].slice(-30);
+          });
         } else if (data.type === 'customer') {
           setStats((prev) => ({ ...prev, activeCustomers: prev.activeCustomers + 1 }));
         } else if (data.type === 'invoice' && data.invoice.status === 'pending') {
           setStats((prev) => ({ ...prev, pendingInvoices: prev.pendingInvoices + 1 }));
         } else if (data.type === 'payLink' && data.payLink.active) {
           setStats((prev) => ({ ...prev, activePayLinks: prev.activePayLinks + 1 }));
+        } else if (data.type === 'subscription' && data.subscription.status === 'active') {
+          setStats((prev) => ({ ...prev, activeSubscriptions: prev.activeSubscriptions + 1 }));
         }
       }
     });
     return () => ws.close();
   }, [session]);
 
+  const handleCreatePayLink = async () => {
+    if (!session.user.walletAddress) {
+      toast({
+        title: 'Error',
+        description: 'Please connect your wallet first.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      const url = `pay/${nanoid(10)}`;
+      const response = await fetch('/api/merchant/pay-links', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.accessToken}`,
+        },
+        body: JSON.stringify({
+          name: `PayLink-${Date.now()}`,
+          amount: 0.01, // Example amount
+          currency: 'ETH',
+          type: 'one-time',
+          redirectUrl: '',
+        }),
+      });
+      const payLink = await response.json();
+      navigator.clipboard.writeText(`${window.location.origin}/${payLink.url}`);
+      toast({
+        title: 'Pay Link Created',
+        description: 'Pay link copied to clipboard.',
+      });
+    } catch (error) {
+      console.error('Error creating pay link:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to create pay link.',
+        variant: 'destructive',
+      });
+    }
+  };
+
   if (status === 'loading' || !session) return null;
 
   return (
-    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+    <div className="flex min-h-screen bg-black">
       <Sidebar role={session.user.role} />
-      <div className="flex-1 p-4 sm:p-6 md:p-8 lg:p-10 max-w-[100vw] overflow-x-hidden">
-        <header className="mb-6">
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Merchant Dashboard</h1>
-          {session.user.walletAddress && (
-            <p className="text-sm text-gray-600">
-              Wallet Balance: {balance?.formatted} {balance?.symbol}
-            </p>
-          )}
+      {!session.user.walletAddress && <WalletConnectPopup role="merchant" />}
+      <div className="flex-1 p-4 sm:p-6 md:p-8 lg:p-10 max-w-[100vw] overflow-x-hidden text-white">
+        <header className="mb-6 flex justify-between items-center">
+          <h1 className="text-2xl sm:text-3xl font-bold">Merchant Dashboard</h1>
+          <Button onClick={handleCreatePayLink} className="bg-emerald-500 hover:bg-emerald-600">
+            Create Pay Link
+          </Button>
         </header>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-          <Card className="shadow-lg bg-white rounded-xl">
+          <Card className="shadow-lg bg-gray-900 rounded-xl border-none">
             <CardHeader className="flex items-center gap-2">
-              <DollarSign className="w-5 h-5 text-primary-merchant" />
-              <CardTitle className="text-sm font-semibold text-gray-900">Total Revenue</CardTitle>
+              <DollarSign className="w-5 h-5 text-emerald-500" />
+              <CardTitle className="text-sm font-semibold text-white">Total Revenue</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold text-gray-900">${stats.totalRevenue.toFixed(2)}</p>
+              <p className="text-2xl font-bold text-white">${stats.totalRevenue.toFixed(2)}</p>
             </CardContent>
           </Card>
-          <Card className="shadow-lg bg-white rounded-xl">
+          <Card className="shadow-lg bg-gray-900 rounded-xl border-none">
             <CardHeader className="flex items-center gap-2">
-              <Users className="w-5 h-5 text-primary-merchant" />
-              <CardTitle className="text-sm font-semibold text-gray-900">Active Customers</CardTitle>
+              <Users className="w-5 h-5 text-emerald-500" />
+              <CardTitle className="text-sm font-semibold text-white">Active Customers</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold text-gray-900">{stats.activeCustomers}</p>
+              <p className="text-2xl font-bold text-white">{stats.activeCustomers}</p>
             </CardContent>
           </Card>
-          <Card className="shadow-lg bg-white rounded-xl">
+          <Card className="shadow-lg bg-gray-900 rounded-xl border-none">
             <CardHeader className="flex items-center gap-2">
-              <FileText className="w-5 h-5 text-primary-merchant" />
-              <CardTitle className="text-sm font-semibold text-gray-900">Pending Invoices</CardTitle>
+              <FileText className="w-5 h-5 text-emerald-500" />
+              <CardTitle className="text-sm font-semibold text-white">Pending Invoices</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold text-gray-900">{stats.pendingInvoices}</p>
+              <p className="text-2xl font-bold text-white">{stats.pendingInvoices}</p>
             </CardContent>
           </Card>
-          <Card className="shadow-lg bg-white rounded-xl">
+          <Card className="shadow-lg bg-gray-900 rounded-xl border-none">
             <CardHeader className="flex items-center gap-2">
-              <Link className="w-5 h-5 text-primary-merchant" />
-              <CardTitle className="text-sm font-semibold text-gray-900">Active Pay Links</CardTitle>
+              <Link className="w-5 h-5 text-emerald-500" />
+              <CardTitle className="text-sm font-semibold text-white">Active Pay Links</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold text-gray-900">{stats.activePayLinks}</p>
+              <p className="text-2xl font-bold text-white">{stats.activePayLinks}</p>
             </CardContent>
           </Card>
         </div>
+        <Card className="mt-6 shadow-lg bg-gray-900 rounded-xl border-none">
+          <CardHeader>
+            <CardTitle className="text-lg font-semibold text-white">Achievements Overview</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {chartData.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center">No transaction data available.</p>
+            ) : (
+              <div className="h-[300px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                    <XAxis dataKey="date" stroke="#9CA3AF" />
+                    <YAxis stroke="#9CA3AF" />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#1F2937', borderRadius: '8px', border: 'none' }}
+                      labelStyle={{ color: '#F3F4F6' }}
+                    />
+                    <Bar dataKey="amount" fill="#10B981" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
+      <Toaster />
     </div>
   );
 }

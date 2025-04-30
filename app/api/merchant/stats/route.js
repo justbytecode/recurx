@@ -1,11 +1,9 @@
-
 import { auth } from '@/lib/auth';
 import prisma from '@/lib/prisma';
 import { NextResponse } from 'next/server';
 
 export async function GET(request) {
   const session = await auth();
-
   if (!session || session.user.role !== 'merchant') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
@@ -24,18 +22,19 @@ export async function GET(request) {
     const activePayLinks = await prisma.payLink.count({
       where: { merchantId: session.user.id, active: true },
     });
+    const activeSubscriptions = await prisma.subscription.count({
+      where: { plan: { merchantId: session.user.id }, status: 'active' },
+    });
 
     return NextResponse.json({
       totalRevenue,
       activeCustomers,
       pendingInvoices,
       activePayLinks,
+      activeSubscriptions,
     });
   } catch (error) {
     console.error('Error fetching stats:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch stats' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to fetch stats' }, { status: 500 });
   }
 }

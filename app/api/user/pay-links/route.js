@@ -6,13 +6,13 @@ import { nanoid } from 'nanoid';
 
 export async function GET(request) {
   const session = await auth();
-  if (!session || session.user.role !== 'merchant') {
+  if (!session || session.user.role !== 'user') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   try {
     const payLinks = await prisma.payLink.findMany({
-      where: { merchantId: session.user.id },
+      where: { userId: session.user.id },
     });
     return NextResponse.json(payLinks);
   } catch (error) {
@@ -23,7 +23,7 @@ export async function GET(request) {
 
 export async function POST(request) {
   const session = await auth();
-  if (!session || session.user.role !== 'merchant') {
+  if (!session || session.user.role !== 'user') {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -40,7 +40,7 @@ export async function POST(request) {
     const url = `pay/${nanoid(10)}`;
     const payLink = await prisma.payLink.create({
       data: {
-        merchantId: session.user.id,
+        userId: session.user.id,
         name,
         amount: parseFloat(amount),
         currency,
