@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import Sidebar from '@/components/Sidebar';
 import WalletConnectPopup from '@/components/WalletConnectPopup';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -12,8 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/components/ui/use-toast';
-import { Copy, Plus, Trash2 } from 'lucide-react';
-import { subscribeToWebSocket } from '@/lib/websocket';
+import { Copy, Trash2 } from 'lucide-react';
 import { nanoid } from 'nanoid';
 
 export default function PayLinks() {
@@ -57,16 +55,6 @@ export default function PayLinks() {
       });
     }
   };
-
-  useEffect(() => {
-    if (!session) return;
-    const ws = subscribeToWebSocket(session.user.id, (data) => {
-      if (data.type === 'payLink' && data.userId === session.user.id) {
-        setPayLinks((prev) => [...prev, data.payLink]);
-      }
-    });
-    return () => ws.close();
-  }, [session]);
 
   const handleCreatePayLink = async () => {
     if (!newPayLink.name || !newPayLink.amount) {
@@ -115,22 +103,26 @@ export default function PayLinks() {
     });
   };
 
-  const handleDeletePayLink = async (id) => {
+  const handleDeactivateLink = async (id) => {
     try {
       await fetch(`/api/merchant/pay-links/${id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${session.accessToken}` },
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.accessToken}`,
+        },
+        body: JSON.stringify({ active: false }),
       });
-      setPayLinks(payLinks.filter((link) => link.id !== id));
+      setPayLinks(payLinks.map((link) => (link.id === id ? { ...link, active: false } : link)));
       toast({
         title: 'Success',
-        description: 'Pay link deleted successfully.',
+        description: 'Pay link deactivated.',
       });
     } catch (error) {
-      console.error('Error deleting pay link:', error);
+      console.error('Error deactivating pay link:', error);
       toast({
         title: 'Error',
-        description: 'Failed to delete pay link.',
+        description: 'Failed to deactivate pay link.',
         variant: 'destructive',
       });
     }
@@ -139,150 +131,124 @@ export default function PayLinks() {
   if (status === 'loading' || !session) return null;
 
   return (
-    <div className="flex min-h-screen bg-black">
-      <Sidebar role={session.user.role} />
+    <div className="flex-1 p-4 sm:p-6 md:p-8 lg:p-10 max-w-[100vw] overflow-x-hidden text-white">
       {!session.user.walletAddress && <WalletConnectPopup role="merchant" />}
-      <div className="flex-1 p-4 sm:p-6 md:p-8 lg:p-10 max-w-[100vw] overflow-x-hidden text-white">
-        <header className="mb-6 flex items-center justify-between">
-          <h1 className="text-2xl sm:text-3xl font-bold">Pay Links</h1>
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="bg-emerald-500 hover:bg-emerald-600">
-                <Plus className="w-4 h-4 mr-2" /> Create Pay Link
+      <header className="mb-6 flex items-center justify-between">
+        <h1 className="text-2xl sm:text-3xl font-bold">Pay Links</h1>
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogTrigger asChild>
+            <Button className="bg-emerald-500 hover:bg-emerald-600">Create Pay Link</Button>
+          </DialogTrigger>
+          <DialogContent className="bg-gray-900 text-white rounded-lg">
+            <DialogHeader>
+              <DialogTitle>Create New Pay Link</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <Input
+                placeholder="Name"
+                value={newPayLink.name}
+                onChange={(e) => setNewPayLink({ ...newPayLink, name: e.target.value })}
+                className="border-gray-700 focus:ring-emerald-500 text-white bg-gray-800"
+              />
+              <Input
+                placeholder="Amount"
+                type="number"
+                value={newPayLink.amount}
+                onChange={(e) => setNewPayLink({ ...newPayLink, amount: e.target.value })}
+                className="border-gray-700 focus:ring-emerald-500 text-white bg-gray-800"
+              />
+              <Select
+                value={newPayLink.currency}
+                onValueChange={(value) => setNewPayLink({ ...newPayLink, currency: value })}
+              >
+                <SelectTrigger className="border-gray-700 bg-gray-800 text-white">
+                  <SelectValue placeholder="Select Currency" />
+                </SelectTrigger>
+                <SelectContent className="bg-gray-800 text-white border-gray-700">
+                  <SelectItem value="ETH">ETH</SelectItem>
+                  <SelectItem value="USDC">USDC</SelectItem>
+                  <SelectItem value="USDT">USDT</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select
+                value={newPayLink.type}
+                onValueChange={(value) => setNewPayLink({ ...newPayLink, type: value })}
+              >
+                <SelectTrigger className="border-gray-700 bg-gray-800 text-white">
+                  <SelectValue placeholder="Select Type" />
+                </SelectTrigger>
+                <SelectContent className="bg-gray-800 text-white border-gray-700">
+                  <SelectItem value="one-time">One-Time</SelectItem>
+                  <SelectItem value="subscription">Subscription</SelectItem>
+                </SelectContent>
+              </Select>
+              <Input
+                placeholder="Redirect URL (optional)"
+                value={newPayLink.redirectUrl}
+                onChange={(e) => setNewPayLink({ ...newPayLink, redirectUrl: e.target.value })}
+                className="border-gray-700 focus:ring-emerald-500 text-white bg-gray-800"
+              />
+              <Button onClick={handleCreatePayLink} className="bg-emerald-500 hover:bg-emerald-600">
+                Create Pay Link
               </Button>
-            </DialogTrigger>
-            <DialogContent className="bg-gray-900 text-white rounded-lg">
-              <DialogHeader>
-                <DialogTitle>Create New Pay Link</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <Input
-                  placeholder="Pay Link Name"
-                  value={newPayLink.name}
-                  onChange={(e) => setNewPayLink({ ...newPayLink, name: e.target.value })}
-                  className="bg-gray-800 border-gray-700 text-white focus:ring-emerald-500"
-                />
-                <Input
-                  placeholder="Amount"
-                  type="number"
-                  value={newPayLink.amount}
-                  onChange={(e) => setNewPayLink({ ...newPayLink, amount: e.target.value })}
-                  className="bg-gray-800 border-gray-700 text-white focus:ring-emerald-500"
-                />
-                <Select
-                  onValueChange={(value) => setNewPayLink({ ...newPayLink, currency: value })}
-                  value={newPayLink.currency}
-                >
-                  <SelectTrigger className="bg-gray-800 border-gray-700 text-white">
-                    <SelectValue placeholder="Currency" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-gray-800 border-gray-700 text-white">
-                    <SelectItem value="ETH">ETH</SelectItem>
-                    <SelectItem value="USDC">USDC</SelectItem>
-                    <SelectItem value="USDT">USDT</SelectItem>
-                    <SelectItem value="DAI">DAI</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select
-                  onValueChange={(value) => setNewPayLink({ ...newPayLink, type: value })}
-                  value={newPayLink.type}
-                >
-                  <SelectTrigger className="bg-gray-800 border-gray-700 text-white">
-                    <SelectValue placeholder="Type" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-gray-800 border-gray-700 text-white">
-                    <SelectItem value="one-time">One-Time</SelectItem>
-                    <SelectItem value="recurring">Recurring</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Input
-                  placeholder="Redirect URL (optional)"
-                  value={newPayLink.redirectUrl}
-                  onChange={(e) => setNewPayLink({ ...newPayLink, redirectUrl: e.target.value })}
-                  className="bg-gray-800 border-gray-700 text-white focus:ring-emerald-500"
-                />
-                <Button onClick={handleCreatePayLink} className="bg-emerald-500 hover:bg-emerald-600">
-                  Create Pay Link
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
-        </header>
-        <Card className="shadow-lg bg-gray-900 rounded-xl border-none">
-          <CardHeader>
-            <CardTitle className="text-lg font-semibold text-white">Your Pay Links</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="text-sm text-gray-300">Name</TableHead>
-                    <TableHead className="text-sm text-gray-300">Amount</TableHead>
-                    <TableHead className="text-sm text-gray-300">Currency</TableHead>
-                    <TableHead className="text-sm text-gray-300">Type</TableHead>
-                    <TableHead className="text-sm text-gray-300">Status</TableHead>
-                    <TableHead className="text-sm text-gray-300">Created</TableHead>
-                    <TableHead className="text-sm text-gray-300">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {payLinks.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={7} className="text-center text-sm text-gray-400 py-6">
-                        No pay links found.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    payLinks.map((link) => (
-                      <TableRow key={link.id} className="hover:bg-gray-800">
-                        <TableCell className="font-medium text-sm text-white">{link.name}</TableCell>
-                        <TableCell className="text-sm text-gray-400">{link.amount.toFixed(2)}</TableCell>
-                        <TableCell className="text-sm text-gray-400">{link.currency}</TableCell>
-                        <TableCell className="text-sm text-gray-400">{link.type}</TableCell>
-                        <TableCell className="text-sm">
-                          <span
-                            className={`px-2 py-1 rounded-full text-xs font-medium ${
-                              link.active ? 'bg-green-100 text-emerald-600' : 'bg-red-100 text-red-600'
-                            }`}
-                          >
-                            {link.active ? 'Active' : 'Inactive'}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-sm text-gray-400">
-                          {new Date(link.createdAt).toLocaleDateString()}
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          <div className="flex space-x-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleCopyLink(link.url)}
-                              className="flex items-center gap-1 border-gray-700 hover:bg-gray-700 text-white"
-                            >
-                              <Copy className="w-4 h-4" />
-                              Copy
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleDeletePayLink(link.id)}
-                              className="flex items-center gap-1 border-gray-700 hover:bg-red-700 text-red-400"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                              Delete
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
             </div>
-          </CardContent>
-        </Card>
-      </div>
+          </DialogContent>
+        </Dialog>
+      </header>
+      <Card className="shadow-lg bg-gray-900 rounded-xl border-none">
+        <CardHeader>
+          <CardTitle className="text-lg font-semibold text-white">Your Pay Links</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Amount</TableHead>
+                  <TableHead>Currency</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {payLinks.map((link) => (
+                  <TableRow key={link.id}>
+                    <TableCell>{link.name}</TableCell>
+                    <TableCell>{link.amount}</TableCell>
+                    <TableCell>{link.currency}</TableCell>
+                    <TableCell>{link.type}</TableCell>
+                    <TableCell>{link.active ? 'Active' : 'Inactive'}</TableCell>
+                    <TableCell>{new Date(link.createdAt).toLocaleDateString()}</TableCell>
+                    <TableCell>
+                      <div className="flex space-x-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleCopyLink(link.url)}
+                        >
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                        {link.active && (
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleDeactivateLink(link.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

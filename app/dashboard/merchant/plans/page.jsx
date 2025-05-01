@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import Sidebar from '@/components/Sidebar';
 import WalletConnectPopup from '@/components/WalletConnectPopup';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -13,8 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/use-toast';
-import { Plus, Edit, Trash2 } from 'lucide-react';
-import { subscribeToWebSocket } from '@/lib/websocket';
+import { Trash2 } from 'lucide-react';
 
 export default function Plans() {
   const { data: session, status } = useSession();
@@ -25,10 +23,9 @@ export default function Plans() {
     description: '',
     amount: '',
     currency: 'ETH',
-    interval: 'monthly',
-    type: 'subscription',
+    interval: 'month',
+    type: 'recurring',
   });
-  const [editingPlan, setEditingPlan] = useState(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   useEffect(() => {
@@ -60,23 +57,7 @@ export default function Plans() {
     }
   };
 
-  useEffect(() => {
-    if (!session) return;
-    const ws = subscribeToWebSocket(session.user.id, (data) => {
-      if (data.type === 'plan' && data.userId === session.user.id) {
-        if (data.action === 'created') {
-          setPlans((prev) => [...prev, data.plan]);
-        } else if (data.action === 'updated') {
-          setPlans((prev) => prev.map((p) => (p.id === data.plan.id ? data.plan : p)));
-        } else if (data.action === 'deleted') {
-          setPlans((prev) => prev.filter((p) => p.id !== data.plan.id));
-        }
-      }
-    });
-    return () => ws.close();
-  }, [session]);
-
-  const handleCreateOrUpdatePlan = async () => {
+  const handleCreatePlan = async () => {
     if (!newPlan.name || !newPlan.amount) {
       toast({
         title: 'Error',
@@ -87,53 +68,31 @@ export default function Plans() {
     }
 
     try {
-      const url = editingPlan ? '/api/merchant/plans' : '/api/merchant/plans';
-      const method = editingPlan ? 'PUT' : 'POST';
-      const body = editingPlan ? { ...newPlan, id: editingPlan.id } : newPlan;
-
-      const response = await fetch(url, {
-        method,
+      const response = await fetch('/api/merchant/plans', {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${session.accessToken}`,
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(newPlan),
       });
-      if (!response.ok) throw new Error(`Failed to ${editingPlan ? 'update' : 'create'} plan`);
+      if (!response.ok) throw new Error('Failed to create plan');
       const plan = await response.json();
-      if (editingPlan) {
-        setPlans(plans.map((p) => (p.id === plan.id ? plan : p)));
-      } else {
-        setPlans([...plans, plan]);
-      }
+      setPlans([...plans, plan]);
       setIsDialogOpen(false);
-      setNewPlan({ name: '', description: '', amount: '', currency: 'ETH', interval: 'monthly', type: 'subscription' });
-      setEditingPlan(null);
+      setNewPlan({ name: '', description: '', amount: '', currency: 'ETH', interval: 'month', type: 'recurring' });
       toast({
         title: 'Success',
-        description: `Plan ${editingPlan ? 'updated' : 'created'} successfully.`,
+        description: 'Plan created successfully.',
       });
     } catch (error) {
-      console.error(`Error ${editingPlan ? 'updating' : 'creating'} plan:`, error);
+      console.error('Error creating plan:', error);
       toast({
         title: 'Error',
-        description: `Failed to ${editingPlan ? 'update' : 'create'} plan.`,
+        description: 'Failed to create plan.',
         variant: 'destructive',
       });
     }
-  };
-
-  const handleEditPlan = (plan) => {
-    setEditingPlan(plan);
-    setNewPlan({
-      name: plan.name,
-      description: plan.description || '',
-      amount: plan.amount.toString(),
-      currency: plan.currency,
-      interval: plan.interval,
-      type: plan.type,
-    });
-    setIsDialogOpen(true);
   };
 
   const handleDeletePlan = async (id) => {
@@ -146,7 +105,7 @@ export default function Plans() {
         },
         body: JSON.stringify({ id }),
       });
-      setPlans(plans.filter((p) => p.id !== id));
+      setPlans(plans.filter((plan) => plan.id !== id));
       toast({
         title: 'Success',
         description: 'Plan deleted successfully.',
@@ -164,144 +123,126 @@ export default function Plans() {
   if (status === 'loading' || !session) return null;
 
   return (
-    <div className="flex min-h-screen bg-black">
-      <Sidebar role={session.user.role} />
+    <div className="flex-1 p-4 sm:p-6 md:p-8 lg:p-10 max-w-[100vw] overflow-x-hidden text-white">
       {!session.user.walletAddress && <WalletConnectPopup role="merchant" />}
-      <div className="flex-1 p-4 sm:p-6 md:p-8 lg:p-10 max-w-[100vw] overflow-x-hidden text-white">
-        <header className="mb-6 flex items-center justify-between">
-          <h1 className="text-2xl sm:text-3xl font-bold">Subscription Plans</h1>
-          <Dialog open={isDialogOpen} onOpenChange={(open) => {
-            setIsDialogOpen(open);
-            if (!open) setEditingPlan(null);
-          }}>
-            <DialogTrigger asChild>
-              <Button className="bg-emerald-500 hover:bg-emerald-600">
-                <Plus className="w-4 h-4 mr-2" /> Create Plan
+      <header className="mb-6 flex items-center justify-between">
+        <h1 className="text-2xl sm:text-3xl font-bold">Plans</h1>
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogTrigger asChild>
+            <Button className="bg-emerald-500 hover:bg-emerald-600">Create Plan</Button>
+          </DialogTrigger>
+          <DialogContent className="bg-gray-800 text-white rounded-lg">
+            <DialogHeader>
+              <DialogTitle>Create New Plan</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <Input
+                placeholder="Name"
+                value={newPlan.name}
+                onChange={(e) => setNewPlan({ ...newPlan, name: e.target.value })}
+                className="border-gray-700 focus:ring-emerald-500 text-white bg-gray-800"
+              />
+              <Textarea
+                placeholder="Description (optional)"
+                value={newPlan.description}
+                onChange={(e) => setNewPlan({ ...newPlan, description: e.target.value })}
+                className="border-gray-700 focus:ring-emerald-500 text-white bg-gray-800"
+              />
+              <Input
+                placeholder="Amount"
+                type="number"
+                value={newPlan.amount}
+                onChange={(e) => setNewPlan({ ...newPlan, amount: e.target.value })}
+                className="border-gray-700 focus:ring-emerald-500 text-white bg-gray-800"
+              />
+              <Select
+                value={newPlan.currency}
+                onValueChange={(value) => setNewPlan({ ...newPlan, currency: value })}
+              >
+                <SelectTrigger className="border-gray-700 bg-gray-800 text-white">
+                  <SelectValue placeholder="Select Currency" />
+                </SelectTrigger>
+                <SelectContent className="bg-gray-800 text-white border-gray-700">
+                  <SelectItem value="ETH">ETH</SelectItem>
+                  <SelectItem value="USDC">USDC</SelectItem>
+                  <SelectItem value="USDT">USDT</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select
+                value={newPlan.interval}
+                onValueChange={(value) => setNewPlan({ ...newPlan, interval: value })}
+              >
+                <SelectTrigger className="border-gray-700 bg-gray-800 text-white">
+                  <SelectValue placeholder="Select Interval" />
+                </SelectTrigger>
+                <SelectContent className="bg-gray-800 text-white border-gray-700">
+                  <SelectItem value="week">Weekly</SelectItem>
+                  <SelectItem value="month">Monthly</SelectItem>
+                  <SelectItem value="year">Yearly</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select
+                value={newPlan.type}
+                onValueChange={(value) => setNewPlan({ ...newPlan, type: value })}
+              >
+                <SelectTrigger className="border-gray-700 bg-gray-800 text-white">
+                  <SelectValue placeholder="Select Type" />
+                </SelectTrigger>
+                <SelectContent className="bg-gray-800 text-white border-gray-700">
+                  <SelectItem value="recurring">Recurring</SelectItem>
+                  <SelectItem value="one-time">One-Time</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button onClick={handleCreatePlan} className="bg-emerald-500 hover:bg-emerald-600">
+                Create Plan
               </Button>
-            </DialogTrigger>
-            <DialogContent className="bg-gray-900 text-white rounded-lg">
-              <DialogHeader>
-                <DialogTitle>{editingPlan ? 'Edit Plan' : 'Create New Plan'}</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <Input
-                  placeholder="Plan Name"
-                  value={newPlan.name}
-                  onChange={(e) => setNewPlan({ ...newPlan, name: e.target.value })}
-                  className="bg-gray-800 border-gray-700 text-white focus:ring-emerald-500"
-                />
-                <Textarea
-                  placeholder="Description (optional)"
-                  value={newPlan.description}
-                  onChange={(e) => setNewPlan({ ...newPlan, description: e.target.value })}
-                  className="bg-gray-800 border-gray-700 text-white focus:ring-emerald-500"
-                />
-                <Input
-                  placeholder="Amount"
-                  type="number"
-                  value={newPlan.amount}
-                  onChange={(e) => setNewPlan({ ...newPlan, amount: e.target.value })}
-                  className="bg-gray-800 border-gray-700 text-white focus:ring-emerald-500"
-                />
-                <Select
-                  onValueChange={(value) => setNewPlan({ ...newPlan, currency: value })}
-                  value={newPlan.currency}
-                >
-                  <SelectTrigger className="bg-gray-800 border-gray-700 text-white">
-                    <SelectValue placeholder="Currency" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-gray-800 border-gray-700 text-white">
-                    <SelectItem value="ETH">ETH</SelectItem>
-                    <SelectItem value="USDC">USDC</SelectItem>
-                    <SelectItem value="USDT">USDT</SelectItem>
-                    <SelectItem value="DAI">DAI</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Select
-                  onValueChange={(value) => setNewPlan({ ...newPlan, interval: value })}
-                  value={newPlan.interval}
-                >
-                  <SelectTrigger className="bg-gray-800 border-gray-700 text-white">
-                    <SelectValue placeholder="Interval" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-gray-800 border-gray-700 text-white">
-                    <SelectItem value="weekly">Weekly</SelectItem>
-                    <SelectItem value="monthly">Monthly</SelectItem>
-                    <SelectItem value="yearly">Yearly</SelectItem>
-                  </SelectContent>
-                </Select>
-                <Button onClick={handleCreateOrUpdatePlan} className="bg-emerald-500 hover:bg-emerald-600">
-                  {editingPlan ? 'Update Plan' : 'Create Plan'}
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
-        </header>
-        <Card className="shadow-lg bg-gray-900 rounded-xl border-none">
-          <CardHeader>
-            <CardTitle className="text-lg font-semibold text-white">Your Plans</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="text-sm text-gray-300">Name</TableHead>
-                    <TableHead className="text-sm text-gray-300">Amount</TableHead>
-                    <TableHead className="text-sm text-gray-300">Currency</TableHead>
-                    <TableHead className="text-sm text-gray-300">Interval</TableHead>
-                    <TableHead className="text-sm text-gray-300">Created</TableHead>
-                    <TableHead className="text-sm text-gray-300">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {plans.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={6} className="text-center text-sm text-gray-400 py-6">
-                        No plans found.
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    plans.map((plan) => (
-                      <TableRow key={plan.id} className="hover:bg-gray-800">
-                        <TableCell className="font-medium text-sm text-white">{plan.name}</TableCell>
-                        <TableCell className="text-sm text-gray-400">{plan.amount.toFixed(2)}</TableCell>
-                        <TableCell className="text-sm text-gray-400">{plan.currency}</TableCell>
-                        <TableCell className="text-sm text-gray-400">{plan.interval}</TableCell>
-                        <TableCell className="text-sm text-gray-400">
-                          {new Date(plan.createdAt).toLocaleDateString()}
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          <div className="flex space-x-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleEditPlan(plan)}
-                              className="flex items-center gap-1 border-gray-700 hover:bg-gray-700 text-white"
-                            >
-                              <Edit className="w-4 h-4" />
-                              Edit
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleDeletePlan(plan.id)}
-                              className="flex items-center gap-1 border-gray-700 hover:bg-red-700 text-red-400"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                              Delete
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
             </div>
-          </CardContent>
-        </Card>
-      </div>
+          </DialogContent>
+        </Dialog>
+      </header>
+      <Card className="shadow-lg bg-gray-800 rounded-xl border-none">
+        <CardHeader>
+          <CardTitle className="text-lg font-semibold text-white">Your Plans</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Amount</TableHead>
+                  <TableHead>Currency</TableHead>
+                  <TableHead>Interval</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Created</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {plans.map((plan) => (
+                  <TableRow key={plan.id}>
+                    <TableCell>{plan.name}</TableCell>
+                    <TableCell>{plan.amount}</TableCell>
+                    <TableCell>{plan.currency}</TableCell>
+                    <TableCell>{plan.interval}</TableCell>
+                    <TableCell>{plan.type}</TableCell>
+                    <TableCell>{new Date(plan.createdAt).toLocaleDateString()}</TableCell>
+                    <TableCell>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => handleDeletePlan(plan.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

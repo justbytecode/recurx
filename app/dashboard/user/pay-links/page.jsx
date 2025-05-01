@@ -140,7 +140,7 @@ export default function UserPayLinks() {
 
   return (
     <div className="flex min-h-screen bg-black">
-      <Sidebar role={session.user.role} />
+      {/* <Sidebar role={session.user.role} /> */}
       {!session.user.walletAddress && <WalletConnectPopup role="user" />}
       <div className="flex-1 p-4 sm:p-6 md:p-8 lg:p-10 max-w-[100vw] overflow-x-hidden text-white">
         <header className="mb-6 flex items-center justify-between">
